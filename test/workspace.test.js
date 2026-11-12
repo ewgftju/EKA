@@ -75,3 +75,34 @@ test('SVA calendar keeps the planned audit period separate from document deadlin
   assert.equal(view.active.length, 0)
   assert.equal(workspace('reviewer', snapshot()).cases.length, 0)
 })
+test('concurrent decisions and read marks persist together and repeated decisions are rejected', async () => {
+  const { setWorkflowUser, getWorkflow, readNotices, applyWorkflowDecision, restartDemo } = await import('../src/workflow.js')
+  const memoryStore = () => {
+    const data = new Map()
+    return { getItem: key => data.get(key) ?? null, setItem: (key, val) => data.set(key, String(val)), removeItem: key => data.delete(key) }
+  }
+  Object.defineProperty(globalThis, 'localStorage', { value: memoryStore(), configurable:true })
+  Object.defineProperty(globalThis, 'sessionStorage', { value: memoryStore(), configurable:true })
+  try {
+    setWorkflowUser('reviewer')
+    await restartDemo()
+    const operations = await Promise.allSettled([
+      applyWorkflowDecision('reviewer','program','task-program','approve','',{}),
+      readNotices('reviewer',['notice-program']),
+      applyWorkflowDecision('reviewer','program','task-program','approve','',{})
+    ])
+    assert.equal(operations.filter(outcome => outcome.status === 'rejected').length, 1)
+    const state = getWorkflow()
+    assert.ok(state.notifications.find(n => n.id === 'notice-program').readAt)
+    assert.equal(state.tasks.find(t => t.id === 'task-program-final').status, 'pending')
+    assert.equal(state.entities.find(d => d.id === 'program').history.filter(h => h.text === 'Документ согласован').length, 1)
+    assert.equal(await readNotices('region',['notice-sur-selection']), 0)
+    await restartDemo()
+    const original = getWorkflow()
+    assert.equal(original.tasks.find(t => t.id === 'task-program-final').status, 'waiting')
+    assert.equal(original.tasks.find(t => t.id === 'task-program').status, 'pending')
+  } finally {
+    delete globalThis.localStorage
+    delete globalThis.sessionStorage
+  }
+})

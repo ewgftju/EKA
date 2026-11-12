@@ -203,7 +203,7 @@ kbd { font: inherit; font-size: 9px; border: 1px solid var(--line); border-radiu
 .persona-text b { font-size: 11.5px; font-weight: 620; }
 .persona-text small { font-size: 10px; color: var(--muted); }
 .persona.chosen, .persona:hover { background: #f1f8f5; border-color: #96c5b9; }
-.modal-foot { padding: 11px 18px; display: flex; justify-content: flex-end; border-top: 1px solid var(--line-soft); }
+.modal-foot { gap: 7px; padding: 11px 18px; display: flex; justify-content: flex-end; border-top: 1px solid var(--line-soft); }
 .dialog-notifications { position: fixed; inset: 62px max(15px,8vw) auto auto; margin: 0; width: min(390px,calc(100% - 26px)); }
 .dialog-notifications::backdrop { background: rgba(11,42,58,.16); }
 .bell-tabs { padding-top: 3px; }

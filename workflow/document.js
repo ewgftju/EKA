@@ -114,9 +114,9 @@ function render() {
       ${event.comment ? `<p>${esc(event.comment)}</p>` : ''}</li>`).join('')}</ol></aside></div>`;
 }
 
-function submitDecision(employeeId, taskId, decision, comment = '', payload = {}) {
+async function submitDecision(employeeId, taskId, decision, comment = '', payload = {}) {
   try {
-    applyWorkflowDecision(employeeId, currentId(), taskId, decision, comment, payload);
+    await applyWorkflowDecision(employeeId, currentId(), taskId, decision, comment, payload);
     if (dialog.open) dialog.close();
     render();
     notify('Действие сохранено');

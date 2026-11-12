@@ -9,7 +9,7 @@ function hero(view) {
   const course = courses.find(course => course.status === 'active' && course.dueDate >= today)
   const person = primary.name + ' · ' + primary.org
   const nextDoc = next ? '<button class="hero-next" data-document="' + esc(next.entityId) + '">' + glyph('CalendarClock') +
-    '<span><small>Ближайший срок</small><strong>' + esc(next.title) + '</strong><em>' + esc(next.dateLabel) + '</em></span>' + glyph('ArrowUpRight', 'hero-next-arrow') + '</button>' : ''
+    '<span><small>Ближайший срок</small><strong>' + esc(next.actionId === 'attendance' ? 'Подтвердить участие в заседании' : next.title) + '</strong><em>' + esc(next.dateLabel) + '</em></span>' + glyph('ArrowUpRight', 'hero-next-arrow') + '</button>' : ''
   const nextCourse = !next && course ? '<a class="hero-next" href="#/learning?course=' + esc(course.id) + '">' + glyph('GraduationCap') + '<span><small>Ближайший срок обучения</small><strong>' +
     esc(course.title) + '</strong><em>' + esc(shortDay(course.dueDate)) + '</em></span>' + glyph('ArrowUpRight', 'hero-next-arrow') + '</a>' : ''
   const upcoming = view.events.filter(e => e.caseId && e.date >= today).sort((a,b) => a.date.localeCompare(b.date))[0]

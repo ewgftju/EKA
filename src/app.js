@@ -5,7 +5,7 @@ import { makeCalendar } from './calendar.js'
 import { teamPage, bindTeam } from './team.js'
 import { casesPanel } from './cases.js'
 import { taskList, noticeList, bindLists } from './lists.js'
-import { getWorkflow, setWorkflowUser, openWorkflowDocument, readNotices, workflowStorageKey } from './workflow.js'
+import { getWorkflow, setWorkflowUser, openWorkflowDocument, readNotices, restartDemo, workflowStorageKey } from './workflow.js'
 
 const app = document.querySelector('#app')
 const dialog = document.querySelector('#overlay')
@@ -139,9 +139,9 @@ function render() {
   if (page === 'tasks' || page === 'notifications') bindLists(app)
   if (page === 'team') bindTeam(app, view.today, () => !!employee(profileId)?.canImport, render)
 }
-function openDocument(id, noticeId) {
+async function openDocument(id, noticeId) {
   if (!view?.allowedEntities.has(id)) { toast('Документ недоступен этому профилю'); return }
-  if (noticeId) readNotices(profileId, [noticeId])
+  if (noticeId) await readNotices(profileId, [noticeId])
   if (!openWorkflowDocument(profileId, id)) toast('Документ недоступен этому профилю')
 }
 function closeOverlay() {
@@ -185,7 +185,7 @@ function searchResults(term) {
   return items || empty('По вашему запросу ничего не найдено', 'Попробуйте номер документа, название или модуль.', 'Search')
 }
 function aboutPanel() {
-  return modalHeader('О демонстрационном стенде','CircleHelp') + '<div class="about-body"><p>Кабинет объединяет тестовые поручения ВГА, СВА, профконтроля, СУР и возражений. Документы, адресаты и сроки взяты из общего макета SAQ. Для учебных профилей использованы назначения из модуля «Кадры».</p><p>Демонстрационные сроки отсчитываются от первого открытия в этом браузере. Прочтение и решения сохраняются здесь же. Внешние модули открываются на отдельных тестовых стендах.</p><p>Производственный вход через SAQ ID и обмен с рабочими системами относятся к следующему этапу.</p></div>'
+  return modalHeader('О демонстрационном стенде','CircleHelp') + '<div class="about-body"><p>Кабинет объединяет тестовые поручения ВГА, СВА, профконтроля, СУР и возражений. Документы, адресаты и сроки взяты из общего макета SAQ. Для учебных профилей использованы назначения из модуля «Кадры».</p><p>Демонстрационные сроки отсчитываются от первого открытия в этом браузере. Прочтение и решения сохраняются здесь же. Внешние модули открываются на отдельных тестовых стендах.</p><p>Производственный вход через SAQ ID и обмен с рабочими системами относятся к следующему этапу.</p></div><div class="modal-foot"><button class="button quiet" data-prepare-demo>' + glyph('RotateCcw') + 'Начать демонстрацию заново</button></div>'
 }
 function openOverlay(kind) {
   if (!view) return
@@ -199,7 +199,7 @@ function openOverlay(kind) {
   if (!dialog.open) dialog.showModal()
   if (kind === 'search') dialog.querySelector('input').focus()
 }
-document.addEventListener('click', event => {
+document.addEventListener('click', async event => {
   const target = event.target.closest('button,a')
   if (!target) return
   if (target.matches('.skip')) { event.preventDefault(); document.getElementById('main-content')?.focus(); return }
@@ -212,12 +212,20 @@ document.addEventListener('click', event => {
     return
   }
   if (!view) return
+  if (target.hasAttribute('data-prepare-demo')) {
+    dialog.innerHTML = modalHeader('Начать демонстрацию заново', 'RotateCcw') + '<div class="about-body"><p>В этом браузере будут восстановлены исходные поручения и уведомления для всех демопрофилей. Тестовые решения и отметки о прочтении будут сброшены, а сроки поручений начнут отсчитываться от текущего времени.</p></div><div class="modal-foot"><button class="button quiet" data-close>Отмена</button><button class="button primary" data-restart-demo>Восстановить примеры</button></div>'
+    return
+  }
+  if (target.hasAttribute('data-restart-demo')) {
+    await restartDemo()
+    closeOverlay(); calendarKey = ''; go('#/', true); toast('Демонстрационные примеры восстановлены'); return
+  }
   if (target.hasAttribute('data-logout')) { closeOverlay(); activate(null); go('#/login', true); return }
   if (target.dataset.profile) { closeOverlay(); activate(target.dataset.profile); go('#/', true); return }
   if (target.dataset.open) { openOverlay(target.dataset.open); return }
   if (target.dataset.bellTab) { bellTab = target.dataset.bellTab; dialog.innerHTML = bellPanel(); return }
   if (target.hasAttribute('data-read-all')) {
-    const count = readNotices(profileId, view.notices.filter(n => !n.read).map(n => n.id))
+    const count = await readNotices(profileId, view.notices.filter(n => !n.read).map(n => n.id))
     render(); if (count) toast('Уведомления отмечены прочитанными'); return
   }
   if (target.dataset.notice) {
@@ -262,7 +270,13 @@ dialog.addEventListener('click', event => { if (event.target === dialog && !even
 window.addEventListener('hashchange', () => { mobileMenu = false; render(); window.scrollTo(0, 0) })
 window.addEventListener('pageshow', event => { if (event.persisted) render() })
 window.addEventListener('storage', event => { if (event.key === workflowStorageKey || event.key?.startsWith('saq.eka.team')) render() })
-document.addEventListener('visibilitychange', () => { if (!document.hidden && view && !dialog.open) render() })
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && view && !dialog.open && ['home','calendar'].includes(page)) {
+    const next = buildView(profileId, getWorkflow())
+    if (next.today !== view.today || next.unread !== view.unread || next.active.length !== view.active.length ||
+        next.active.some(t => t.overdue !== view.active.find(old => old.id === t.id)?.overdue)) render()
+  }
+})
 render()
 
 // Re-evaluate the two time-sensitive counters while a dashboard stays open.

@@ -35,6 +35,7 @@ function save(state) {
   const raw = JSON.stringify(persisted);
   try {
     localStorage.setItem(workflowStorageKey, raw);
+    try { sessionStorage.removeItem(workflowStorageKey); } catch { /* Local data is durable. */ }
   } catch {
     try { sessionStorage.setItem(workflowStorageKey, raw); } catch { /* In-memory view. */ }
   }
@@ -42,10 +43,9 @@ function save(state) {
 
 export function getWorkflow() {
   let raw = null;
-  try {
-    raw = localStorage.getItem(workflowStorageKey);
-  } catch {
-    try { raw = sessionStorage.getItem(workflowStorageKey); } catch { /* In-memory view. */ }
+  try { raw = sessionStorage.getItem(workflowStorageKey); } catch { /* Optional fallback. */ }
+  if (!raw) {
+    try { raw = localStorage.getItem(workflowStorageKey); } catch { /* In-memory view. */ }
   }
   let state = null;
   if (raw) {
@@ -77,18 +77,31 @@ export function setWorkflowUser(profileId) {
   return nextId;
 }
 
+// All writers use the same named lock so a read mark in a second tab cannot
+// overwrite a decision or activate a route twice.
+async function writeWorkflow(change) {
+  const locks = globalThis.navigator?.locks;
+  return locks ? locks.request(workflowStorageKey, async () => change()) : change();
+}
+
 export function readNotices(profileId, ids) {
-  if (!profileId || profileId !== activeEmployee() || !Array.isArray(ids)) return 0;
-  const wanted = new Set(ids);
-  const state = getWorkflow();
-  const unread = state.notifications.filter(n => n.recipientId === profileId && !n.readAt && wanted.has(n.id) &&
-    canOpenWorkflowDocument(state, profileId, n.entityId));
-  if (unread.length) {
-    const now = new Date().toISOString();
-    for (const notice of unread) notice.readAt = now;
-    save(state);
-  }
-  return unread.length;
+  return writeWorkflow(() => {
+    if (!profileId || profileId !== activeEmployee() || !Array.isArray(ids)) return 0;
+    const wanted = new Set(ids);
+    const state = getWorkflow();
+    const unread = state.notifications.filter(n => n.recipientId === profileId && !n.readAt && wanted.has(n.id) &&
+      canOpenWorkflowDocument(state, profileId, n.entityId));
+    if (unread.length) {
+      const now = new Date().toISOString();
+      for (const notice of unread) notice.readAt = now;
+      save(state);
+    }
+    return unread.length;
+  });
+}
+
+export function restartDemo() {
+  return writeWorkflow(() => save(makeSeed()));
 }
 
 function hubReturnUrl(value) {
@@ -122,13 +135,15 @@ export function openWorkflowDocument(profileId, entityId) {
 }
 
 export function applyWorkflowDecision(profileId, entityId, taskId, decision, comment, payload) {
-  // Read once more on submission: another tab may have completed or returned the task.
-  const state = getWorkflow();
-  if (!canOpenWorkflowDocument(state, profileId, entityId) ||
-      !state.tasks.some(task => task.id === taskId && task.entityId === entityId && task.recipientId === profileId)) {
-    throw new Error('Это поручение недоступно в вашем профиле.');
-  }
-  const next = actOnTask(state, taskId, profileId, decision, comment, payload);
-  save(next);
-  return next;
+  return writeWorkflow(() => {
+    // Read once more on submission: another tab may have completed or returned the task.
+    const state = getWorkflow();
+    if (!canOpenWorkflowDocument(state, profileId, entityId) ||
+        !state.tasks.some(task => task.id === taskId && task.entityId === entityId && task.recipientId === profileId)) {
+      throw new Error('Это поручение недоступно в вашем профиле.');
+    }
+    const next = actOnTask(state, taskId, profileId, decision, comment, payload);
+    save(next);
+    return next;
+  });
 }
