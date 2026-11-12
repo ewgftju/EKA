@@ -1,4 +1,5 @@
 import { esc as escape, glyph } from './ui.js'
+import { describeTask, describeTaskStage } from './actions.js'
 
 const perPage = 10
 const completed = new Set(['completed', 'returned', 'rejected', 'cancelled'])
@@ -55,7 +56,7 @@ function filters({ path, hidden, query, options, chosenModule, chosenStatus }) {
   const fields = Object.entries(hidden).map(([name, value]) => `<input type="hidden" name="${name}" value="${escape(value)}">`).join('')
   const modules = selectOptions([['', 'Все модули'], ...options], chosenModule)
   const status = chosenStatus ? `<label class="el-select"><span class="el-sr">Статус и срок</span><select name="status">${selectOptions(statuses, chosenStatus)}</select>${icon('ChevronDown')}</label>` : ''
-  const placeholder = path === 'tasks' ? 'Название или номер документа' : 'Поиск по уведомлениям'
+  const placeholder = path === 'tasks' ? 'Действие, документ или номер' : 'Поиск по уведомлениям'
   return `<form class="el-filters" role="search" aria-label="Поиск и фильтры" data-el-path="${path}">${fields}
     <label class="el-search">${icon('Search')}<span class="el-sr">Поиск</span>
       <input type="search" name="q" placeholder="${placeholder}" value="${escape(query)}" maxlength="200" autocomplete="off">
@@ -108,22 +109,25 @@ function matchesStatus(row, status, today) {
 
 function taskRow(row, outgoing, today) {
   const id = escape(row.entityId)
-  const title = row.title || 'Документ'
+  const documentTitle = row.docTitle || row.title
+  const activeIncoming = !outgoing && row.status === 'pending'
+  const title = activeIncoming
+    ? row.actionTitle || describeTask(row.actionId, documentTitle).title
+    : row.stageTitle || describeTaskStage(row.actionId, documentTitle)
   const state = Object.hasOwn(stateNames, row.status) ? row.status : 'unknown'
   const tone = tones.has(row.tone) ? row.tone : 'teal'
-  const late = row.status === 'pending' && row.overdue
-  const dueToday = row.status === 'pending' && row.dueDay === today
-  const dueText = row.dateLabel || 'Без срока'
+  const late = Boolean(row.dueDay) && row.status === 'pending' && row.overdue
+  const dueToday = Boolean(row.dueDay) && row.status === 'pending' && row.dueDay === today
+  const dueText = row.dueDay ? row.dateLabel || row.dueDay : 'Срок не установлен'
   const dueHint = late ? 'Просрочено' : dueToday && !normalized(dueText).includes('сегодня') ? 'Сегодня' : ''
   const name = outgoing ? row.recipientName : row.authorName
   return `<tr class="el-task-row">
-    <td class="el-doc-col"><button class="el-document" type="button" data-document="${id}" aria-label="Открыть документ «${escape(title)}»">${escape(title)}</button>
+    <td class="el-doc-col"><button class="el-document" type="button" data-document="${id}" title="Открыть документ${documentTitle ? ' «' + escape(documentTitle) + '»' : ''}">${escape(title)}</button>
       <div class="el-doc-meta">${row.number ? `<span class="el-number">${escape(row.number)}</span>` : ''}
       <span class="el-source el-tone-${tone}"><i aria-hidden="true"></i>${escape(row.moduleLabel || row.module)}</span></div></td>
-    <td class="el-action-col"><span class="el-action-name">${escape(row.action || 'Поручение')}</span>
-      <span class="el-status el-state-${state}">${escape(row.statusLabel || stateNames[state] || 'Статус не указан')}</span></td>
-    <td class="el-person-col"><span class="el-mobile-label">${outgoing ? 'Кому' : 'От кого'}</span>${escape(name || '—')}</td>
-    <td class="el-due-col${late ? ' el-late' : dueToday ? ' el-due-today' : ''}"><span class="el-due-text">${escape(dueText)}</span>${dueHint ? `<small>${dueHint}</small>` : ''}</td>
+    <td class="el-action-col"><span class="el-status el-state-${state}">${escape(row.statusLabel || stateNames[state] || 'Статус не указан')}</span></td>
+    <td class="el-person-col"><span class="el-mobile-label">${outgoing ? 'Получатель' : 'От кого'}</span>${escape(name || '—')}</td>
+    <td class="el-due-col${late ? ' el-late' : dueToday ? ' el-due-today' : !row.dueDay ? ' el-no-date' : ''}"><span class="el-due-text">${escape(dueText)}</span>${dueHint ? `<small>${dueHint}</small>` : ''}</td>
     <td class="el-end" aria-hidden="true">${icon('ChevronRight')}</td></tr>`
 }
 
@@ -132,7 +136,7 @@ export function taskList(view, params = new URLSearchParams()) {
   const outgoing = view.outgoing || []
   const box = params.get('box') === 'out' ? 'out' : 'in'
   const isOut = box === 'out'
-  const status = statuses.some(([value]) => value === params.get('status')) ? params.get('status') : isOut ? 'all' : 'active'
+  const status = statuses.some(([value]) => value === params.get('status')) ? params.get('status') : 'all'
   const source = isOut ? outgoing : incoming
   const options = moduleFilter(source, view.modules || [])
   const requestedModule = params.get('module') || ''
@@ -140,17 +144,17 @@ export function taskList(view, params = new URLSearchParams()) {
   const q = (params.get('q') || '').slice(0, 200).trim()
   const query = normalized(q)
   const filtered = source.filter(row => (!moduleId || row.module === moduleId) && matchesStatus(row, status, view.today) &&
-    matches(query, [row.title, row.number, row.moduleLabel, row.action, row.authorName, row.recipientName, row.statusLabel]))
+    (!query || matches(query, [row.docTitle || row.title, row.number, row.moduleLabel, row.action, row.actionTitle, describeTaskStage(row.actionId, row.docTitle || row.title), row.authorName, row.recipientName, row.statusLabel])))
   const data = pageOf(filtered, params.get('page'))
   const hasFilters = Boolean(q || moduleId || status !== 'all')
   const noRows = hasFilters && source.length ?
     empty('ListFilter', 'Поручений с такими условиями нет', href('tasks', { box, status: 'all' }), 'Показать все поручения') :
     empty('Inbox', `Пока нет ${isOut ? 'отправленных' : 'входящих'} поручений`)
   const table = `<table class="el-table"><caption class="el-sr">${isOut ? 'Отправленные' : 'Входящие'} поручения</caption>
-    <thead><tr><th scope="col">Документ</th><th scope="col">Действие и статус</th><th scope="col">${isOut ? 'Кому' : 'От кого'}</th><th scope="col">Срок</th><th aria-label="Переход"></th></tr></thead>
+    <thead><tr><th scope="col">${isOut ? 'Действие получателя' : 'Поручение'}</th><th scope="col">Статус</th><th scope="col">${isOut ? 'Получатель' : 'От кого'}</th><th scope="col">Срок поручения</th><th aria-label="Переход"></th></tr></thead>
     <tbody>${data.rows.map(row => taskRow(row, isOut, view.today)).join('')}</tbody></table>`
   return `<section class="el-panel" aria-label="Реестр поручений"><div class="el-top"><nav class="el-tabs" aria-label="Направление поручений">
-      ${tab('tasks', { box: 'in', status: 'active' }, 'Входящие', incoming.length, !isOut)}
+      ${tab('tasks', { box: 'in', status: 'all' }, 'Входящие', incoming.length, !isOut)}
       ${tab('tasks', { box: 'out', status: 'all' }, 'Отправленные', outgoing.length, isOut)}
     </nav></div>
     ${filters({ path: 'tasks', hidden: { box }, query: q, options, chosenModule: moduleId, chosenStatus: status })}

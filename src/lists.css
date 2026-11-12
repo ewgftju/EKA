@@ -45,10 +45,10 @@
 .el-table :is(th, td) { text-align: left; }
 .el-table thead { background: #f5f8f9; }
 .el-table th { color: #617581; font-size: 11px; font-weight: 640; line-height: 15px; padding: 10px 11px; border-bottom: 1px solid var(--el-rule); }
-.el-table th:nth-child(1) { width: 36%; padding-left: 22px; }
-.el-table th:nth-child(2) { width: 22%; }
-.el-table th:nth-child(3) { width: 20%; }
-.el-table th:nth-child(4) { width: 17.5%; }
+.el-table th:nth-child(1) { width: 42%; padding-left: 22px; }
+.el-table th:nth-child(2) { width: 16%; }
+.el-table th:nth-child(3) { width: 18%; }
+.el-table th:nth-child(4) { width: 19.5%; }
 .el-table th:last-child { width: 4.5%; }
 .el-task-row { cursor: pointer; }
 .el-task-row:hover, .el-task-row:focus-within { background: #f7faf9; }
@@ -68,14 +68,15 @@
 .el-tone-amber { --el-marker: #b28035; }
 .el-tone-rose, .el-tone-red { --el-marker: #bd6674; }
 .el-tone-slate { --el-marker: #788a97; }
-.el-action-name, .el-due-text { display: block; }
-.el-status { display: inline-block; margin-top: 4px; padding: 1px 6px; max-width: 100%; border-radius: 4px; color: #536974; background: #f0f3f5; font-size: 10px; line-height: 16px; font-weight: 590; }
+.el-due-text { display: block; }
+.el-status { display: inline-block; padding: 1px 6px; max-width: 100%; border-radius: 4px; color: #536974; background: #f0f3f5; font-size: 10px; line-height: 16px; font-weight: 590; }
 .el-state-pending { color: #176d75; background: #e8f3f3; }
 .el-state-completed { color: #286747; background: #eaf3ec; }
 .el-state-returned { color: #825718; background: #faf2e2; }
 .el-state-rejected { color: #9c424e; background: #f9ecee; }
 .el-state-cancelled, .el-state-waiting { color: #536974; background: #eff3f5; }
 .el-due-col { font-variant-numeric: tabular-nums; }
+.el-due-col.el-no-date { color: var(--el-muted); }
 .el-due-col small { display: block; margin-top: 2px; font-size: 10px; line-height: 16px; font-weight: 650; }
 .el-due-col.el-late { color: #a93e4d; }
 .el-due-col.el-due-today { color: #187373; }
@@ -125,8 +126,6 @@
   .el-task-row td, .el-task-row .el-doc-col { padding: 0; }
   .el-task-row .el-doc-col { grid-column: 1/-1; padding-right: 22px; }
   .el-action-col { grid-column: 1; grid-row: 2; }
-  .el-action-name { display: inline; margin-right: 4px; }
-  .el-status { margin-top: 0; }
   .el-person-col { grid-column: 1/-1; grid-row: 3; }
   .el-mobile-label { display: inline; margin-right: 5px; color: var(--el-muted); }
   .el-task-row .el-due-col { grid-column: 2; grid-row: 2; text-align: right; }

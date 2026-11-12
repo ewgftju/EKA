@@ -1,7 +1,7 @@
 // The EKA and its document view share the SAQ workflow seed and decision model.
 // Source: ewgftju/saq-notification-test, 23c4c9d417fdc6302c1066de9291897bf798fa10.
 import { makeSeed, users } from '../workflow/data.js';
-import { actOnTask, canOpen } from '../workflow/model.js';
+import { actOnTask, canOpen, isTaskOverdue } from '../workflow/model.js';
 import { workflowGrants } from '../workflow/access.js';
 
 export const workflowUsers = users;
@@ -11,8 +11,63 @@ const employeeIds = new Set(Object.keys(workflowGrants));
 const sessionUserKey = 'saq.eka.workflow.employee';
 const returnKey = 'saq.eka.workflow.return';
 const hubUrl = new URL('../', import.meta.url);
+const astanaDay = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Asia/Almaty', year: 'numeric', month: '2-digit', day: '2-digit',
+});
 let memoryState;
 let memoryUser = null;
+
+export function isWorkflowDateOnly(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+export function isWorkflowTaskOverdue(task, now = Date.now()) {
+  if (isWorkflowDateOnly(task?.dueAt)) {
+    const date = new Date(task.dueAt).toJSON();
+    return task.status === 'pending' && date?.slice(0, 10) === task.dueAt && task.dueAt < astanaDay.format(now);
+  }
+  return isTaskOverdue(task, now);
+}
+
+// The original demo based each of these deadlines on the first visit. Keep
+// this list only to identify that version's persisted values.
+const legacyDeadlineHours = {
+  'task-program': 8,
+  'task-program-final': 48,
+  'task-prof-package': 24,
+  'task-obj-request': -2,
+  'task-sva-conclusion': 48,
+  'task-obsolete': 24,
+  'task-author-revision': 30,
+  'task-appeal-result': 48,
+  'task-subject-answer': 40,
+  'task-sur-selection': 72,
+  'task-audit-report': 48,
+  'task-audit-request': 20,
+  'task-prof-act': 48,
+  'task-prof-checklist': 48,
+  'task-prof-prescription': 50,
+  'task-quality-materials': 72,
+  'task-meeting': 24,
+  'task-commission-position': 36,
+  'task-obj-answer': 24,
+};
+
+export function migrateWorkflowDeadlines(state) {
+  if (state.preferences?.demoDeadlinesVersion >= 1) return state;
+  const createdAt = Date.parse(state.createdAt);
+  const tasks = state.tasks.map(task => {
+    const hours = legacyDeadlineHours[task?.id];
+    if (!Number.isFinite(hours) || !Number.isFinite(createdAt) || !task.dueAt || task.dueSource) return task;
+    const entityId = task.id === 'task-program-final' ? 'program' : task.id.slice(5);
+    const oldDueAt = new Date(createdAt + hours * 3600000).toJSON();
+    if (task.entityId !== entityId || task.routeId !== 'route-' + entityId || task.dueAt !== oldDueAt) return task;
+    return { ...task, dueAt: null };
+  });
+  const notifications = state.notifications.filter(notice =>
+    !(notice.id === 'notice-reminder' && notice.eventId === 'reminder-obj-request' && notice.taskId === 'task-obj-request'));
+  return { ...state, tasks, notifications, preferences: { ...state.preferences, demoDeadlinesVersion: 1 } };
+}
 
 function sessionValue(key) {
   try {
@@ -41,27 +96,41 @@ function save(state) {
   }
 }
 
-export function getWorkflow() {
+function readStoredWorkflow() {
   let raw = null;
   try { raw = sessionStorage.getItem(workflowStorageKey); } catch { /* Optional fallback. */ }
   if (!raw) {
     try { raw = localStorage.getItem(workflowStorageKey); } catch { /* In-memory view. */ }
   }
-  let state = null;
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
       if (parsed?.schemaVersion === 1 && Array.isArray(parsed.entities) &&
           Array.isArray(parsed.tasks) && Array.isArray(parsed.notifications) && Number.isFinite(parsed.sequence)) {
-        state = parsed;
+        return parsed;
       }
     } catch { /* An unreadable prototype snapshot can be regenerated. */ }
   }
+  return null;
+}
+
+export function getWorkflow() {
+  let state = readStoredWorkflow();
   if (!state) {
     state = memoryState || makeSeed();
     save(state);
   }
-  return { ...state, activeUserId: activeEmployee() };
+  const migrated = migrateWorkflowDeadlines(state);
+  if (migrated !== state) {
+    // A later decision or read mark from another tab must survive this upgrade.
+    // Display the corrected snapshot immediately and re-read under the writer lock.
+    void writeWorkflow(() => {
+      const latest = readStoredWorkflow() || state;
+      const updated = migrateWorkflowDeadlines(latest);
+      if (updated !== latest) save(updated);
+    }).catch(() => { /* A subsequent read can retry storage migration. */ });
+  }
+  return { ...migrated, activeUserId: activeEmployee() };
 }
 
 export function setWorkflowUser(profileId) {

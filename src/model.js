@@ -1,4 +1,5 @@
-import { workflowUsers } from './workflow.js'
+import { workflowUsers, isWorkflowDateOnly, isWorkflowTaskOverdue } from './workflow.js'
+import { describeTask, describeTaskStage } from './actions.js'
 import { workflowGrants as grants } from '../workflow/access.js'
 import { getCourses, learningProfiles } from './learning.js'
 import { caseProfiles, getCases } from './cases.js'
@@ -16,10 +17,10 @@ const plusDay = (day, count) => {
   return at.toISOString().slice(0, 10)
 }
 export function displayStamp(iso, today) {
-  if (!iso || !Number.isFinite(Date.parse(iso))) return 'Без срока'
+  if (!iso || !Number.isFinite(Date.parse(iso))) return 'Срок не установлен'
   const day = isoDay(iso)
   const label = day === today ? 'Сегодня' : day === plusDay(today, 1) ? 'Завтра' : smallDate.format(new Date(iso))
-  return label + ', ' + clock.format(new Date(iso))
+  return isWorkflowDateOnly(iso) ? label : label + ', ' + clock.format(new Date(iso))
 }
 
 export const catalog = {
@@ -32,15 +33,12 @@ export const catalog = {
   hr: { label: 'Кадры', title: 'Кадровая служба', description: 'Назначенные курсы и результаты обучения', icon: 'GraduationCap', tone: 'teal', url: 'https://saq-hr-test.vercel.app/my-learning' }
 }
 
+export const defaultProfile = 'auditor'
 export const profiles = [
+  ...caseProfiles,
   ...Object.entries(grants).map(([id, modules]) => ({ ...workflowUsers.find(user => user.id === id), modules })),
-  ...learningProfiles, ...caseProfiles
+  ...learningProfiles
 ]
-const actionNames = {
-  approve: 'Согласование', 'approve-final': 'Утверждение', revise: 'Доработка',
-  review: 'Рассмотрение', 'review-selection': 'Рассмотрение отбора', acknowledge: 'Ознакомление',
-  attendance: 'Подтверждение участия', respond: 'Подготовка ответа'
-}
 const taskStates = {
   pending: 'В работе', waiting: 'Ожидает этапа', completed: 'Исполнено',
   returned: 'Возвращено', cancelled: 'Отменено', rejected: 'Отклонено'
@@ -62,18 +60,28 @@ export function buildView(profileId, state, now = Date.now()) {
     if (!doc || (task.recipientId !== profileId && task.authorId !== profileId)) return []
     const module = catalog[doc.module]
     const hasDate = Boolean(task.dueAt && Number.isFinite(Date.parse(task.dueAt)))
+    const instruction = describeTask(task.action, doc)
     return [{
       ...task, title: doc.title, number: doc.number, module: doc.module, moduleLabel: module.label,
       tone: module.tone, icon: module.icon, organization: doc.organization,
-      action: actionNames[task.action] || 'Поручение', actionId: task.action,
+      action: instruction.action, actionTitle: instruction.title, stageTitle: describeTaskStage(task.action, doc), actionId: task.action,
       authorName: nameOf(task.authorId), recipientName: nameOf(task.recipientId),
       statusLabel: taskStates[task.status] || task.status,
       dueDay: hasDate ? isoDay(task.dueAt) : '',
       dateLabel: displayStamp(task.dueAt, today),
-      overdue: task.status === 'pending' && hasDate && Date.parse(task.dueAt) <= now
+      overdue: isWorkflowTaskOverdue(task, now)
     }]
   })
-  const byDeadline = (a, b) => (a.dueAt || '9999').localeCompare(b.dueAt || '9999') || a.id.localeCompare(b.id)
+  const byDeadline = (a, b) => {
+    if (a.dueDay !== b.dueDay) return (a.dueDay || '9999').localeCompare(b.dueDay || '9999')
+    if (a.dueDay) {
+      const dayOnly = Number(isWorkflowDateOnly(a.dueAt)) - Number(isWorkflowDateOnly(b.dueAt))
+      if (dayOnly) return dayOnly
+      const order = Date.parse(a.dueAt) - Date.parse(b.dueAt)
+      if (order) return order
+    }
+    return b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)
+  }
   const incoming = assignments.filter(task => task.recipientId === profileId).sort(byDeadline)
   const outgoing = assignments.filter(task => task.authorId === profileId).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.step - b.step)
   const active = incoming.filter(task => task.status === 'pending')
@@ -86,9 +94,9 @@ export function buildView(profileId, state, now = Date.now()) {
   const courses = getCourses(profileId, isoDay(state.createdAt))
   const events = active.filter(task => task.dueDay).map(task => ({
     id: 'task:' + task.id, date: task.dueDay,
-    title: task.actionId === 'attendance' ? 'Подтвердить участие в заседании' : task.title,
+    title: task.actionTitle,
     module: task.moduleLabel, tone: task.overdue ? 'rose' : task.tone,
-    kind: task.action + ' · ' + clock.format(new Date(task.dueAt)), entityId: task.entityId
+    kind: 'Срок поручения' + (isWorkflowDateOnly(task.dueAt) ? '' : ' · ' + clock.format(new Date(task.dueAt))), entityId: task.entityId
   }))
   // The existing example stores the meeting date in its document text, separately from the RSVP deadline.
   const attendance = incoming.find(task => task.entityId === 'meeting' && task.actionId === 'attendance' && !['cancelled','rejected'].includes(task.status) && task.decision !== 'no')
@@ -102,14 +110,17 @@ export function buildView(profileId, state, now = Date.now()) {
   for (const course of courses.filter(course => course.status === 'active' && course.dueDate)) {
     events.push({ id: 'course:' + course.id, date: course.dueDate, title: course.title, module: 'Кадры', tone: 'teal', kind: 'Срок обучения', courseId: course.id })
   }
-  const cases = getCases(profileId)
+  const cases = getCases(profileId, permitted).map(record => ({
+    ...record, moduleLabel: catalog[record.module].label, tone: catalog[record.module].tone
+  }))
   for (const record of cases) {
     for (const [date, label, edge] of [[record.start, 'Плановое начало', 'start'], [record.end, 'Плановое окончание', 'end']]) {
       if (date) events.push({ id: 'case:' + record.id + ':' + edge, date, title: label + ' · ' + record.number,
-        module: 'СВА', tone: 'violet', kind: record.object, caseId: record.id })
+        module: record.moduleLabel, tone: record.tone, kind: record.object, caseId: record.id, lifecycle: record.lifecycle })
     }
   }
   return { primary, modules, allowedEntities, incoming, outgoing, active, notices, courses, cases, events, today, now,
+    canViewCases: permitted.has('evga') || permitted.has('sva'),
     caseProfile: caseProfiles.some(p => p.id === profileId),
     unread: notices.filter(note => !note.read).length, learning: learningProfiles.some(p => p.id === profileId) }
 }

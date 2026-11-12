@@ -1,18 +1,14 @@
 // Document form adapted from the SAQ notification prototype's app.js.
 import { icon } from './icons.js';
-import { isTaskOverdue } from './model.js';
-import { applyWorkflowDecision, canOpenWorkflowDocument, getWorkflow, getWorkflowReturnUrl, workflowStorageKey, workflowUsers } from '../src/workflow.js';
+import { describeTask } from '../src/actions.js';
+import { applyWorkflowDecision, canOpenWorkflowDocument, getWorkflow, getWorkflowReturnUrl,
+  isWorkflowDateOnly, isWorkflowTaskOverdue, workflowStorageKey, workflowUsers } from '../src/workflow.js';
 
 const app = document.querySelector('#content');
 const dialog = document.querySelector('#decision-dialog');
 const modules = {
   sur: 'Система управления рисками', evga: 'Внутренний государственный аудит',
   sva: 'Служба внутреннего аудита', prof: 'Профилактический контроль', objections: 'Возражения',
-};
-const actionNames = {
-  approve: 'Согласование', 'approve-final': 'Утверждение', acknowledge: 'Ознакомление',
-  'review-selection': 'Рассмотрение отбора', review: 'Рассмотрение', respond: 'Подготовка ответа',
-  revise: 'Доработка', attendance: 'Подтверждение участия',
 };
 const actions = {
   approve: [['approve', 'Согласовать'], ['return', 'Вернуть на доработку', 'secondary', 'return'], ['reject', 'Отклонить', 'danger', 'close']],
@@ -35,6 +31,9 @@ const commentLabels = {
 };
 const dateFormat = new Intl.DateTimeFormat('ru-RU', {
   timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+});
+const dateOnlyFormat = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit', year: 'numeric',
 });
 const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => entities[c]);
@@ -62,11 +61,12 @@ function taskButtons(task) {
 }
 
 function due(task) {
-  if (!task.dueAt) return '';
-  const overdue = isTaskOverdue(task);
+  if (!task.dueAt || !Number.isFinite(Date.parse(task.dueAt))) return '<span>Срок не установлен</span>';
+  const overdue = isWorkflowTaskOverdue(task);
+  const format = isWorkflowDateOnly(task.dueAt) ? dateOnlyFormat : dateFormat;
   return `<span class="deadline-badge ${overdue ? 'overdue' : ''}" data-task-deadline="${esc(task.dueAt)}">
-    <span>${overdue ? 'Срок истёк' : 'Срок исполнения'}</span>
-    <time datetime="${esc(task.dueAt)}">${dateFormat.format(new Date(task.dueAt))}</time></span>`;
+    <span>${overdue ? 'Срок истёк' : 'Срок выполнения'}</span>
+    <time datetime="${esc(task.dueAt)}">${format.format(new Date(task.dueAt))}</time></span>`;
 }
 
 function selectionTable(entity, editable) {
@@ -101,7 +101,7 @@ function render() {
     <div class="document-layout"><section class="panel document-panel" aria-label="Документ ${esc(entity.title)}">
       <header class="document-toolbar"><div><strong>${esc(entity.title)}</strong><span>Редакция ${esc(entity.version)} · ${esc(entity.status)}</span></div>
         ${active ? `<div class="document-actions">${taskButtons(active)}</div>` : ''}</header>
-      ${active ? `<div class="document-route-meta"><span>Инициатор · ${esc(person(active.authorId))}</span><span>${esc(actionNames[active.action])}</span>${due(active)}</div>` : `<p class="document-route-meta">${waiting ? 'Ожидается завершение предыдущего этапа согласования.' : 'Документ открыт для просмотра.'}</p>`}
+      ${active ? `<div class="document-route-meta"><span>Моё действие · <strong>${esc(describeTask(active.action, entity).title)}</strong></span><span>Инициатор · ${esc(person(active.authorId))}</span>${due(active)}</div>` : `<p class="document-route-meta">${waiting ? 'Ожидается завершение предыдущего этапа согласования.' : 'Документ открыт для просмотра.'}</p>`}
       <article class="document-sheet"><h1>${esc(entity.title)}</h1><p class="document-number">№ ${esc(entity.number)}</p>
       <dl class="document-meta"><div><dt>Организация</dt><dd>${esc(entity.organization)}</dd></div>
         <div><dt>Инициатор</dt><dd>${esc(person(entity.authorId))}</dd></div><div><dt>Редакция</dt><dd>${esc(entity.version)}</dd></div>
@@ -174,7 +174,7 @@ window.addEventListener('hashchange', render);
 window.addEventListener('pageshow', render);
 setInterval(() => {
   const badge = app.querySelector('[data-task-deadline]');
-  if (badge && !badge.classList.contains('overdue') && Date.parse(badge.dataset.taskDeadline) <= Date.now()) {
+  if (badge && !badge.classList.contains('overdue') && isWorkflowTaskOverdue({ status: 'pending', dueAt: badge.dataset.taskDeadline })) {
     badge.classList.add('overdue');
     badge.querySelector('span').textContent = 'Срок истёк';
   }

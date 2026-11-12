@@ -375,6 +375,3 @@ kbd { font: inherit; font-size: 9px; border: 1px solid var(--line); border-radiu
 @media (prefers-reduced-motion:reduce) {
   *, *::before, *::after { transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
-
-.three-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); }
-@media(max-width:560px){.three-metrics .metric{min-height:72px}.three-metrics .metric-icon{display:none}}

@@ -1,60 +1,127 @@
-import { esc, glyph, iconBox, empty, plural } from './ui.js'
+import { esc, glyph, empty } from './ui.js'
+import { evgaCases } from './evgaCases.js'
+import { svaAuditors, svaCases } from './svaCases.js'
 
-// The SVA fixture names an object assignee but supplies no shared account ID.
-// In EKA this is a separate internal demo identity, scoped to the SVA module.
-export const caseProfiles = [{
-  id: 'sva-auditor', name: 'Государственный аудитор 12', role: 'Аудитор СВА',
-  org: 'Служба внутреннего аудита', initials: 'А12', modules: ['sva']
-}]
+export const caseProfiles = svaAuditors
+const auditCases = [...evgaCases, ...svaCases]
+const statuses = [
+  ['active', 'В работе'], ['planned', 'Ещё не начаты'], ['closed', 'Завершены'], ['all', 'Все']
+]
+const emptyStatus = {
+  active: 'Дел в работе пока нет', planned: 'Дел, ожидающих начала, нет',
+  closed: 'Завершённых дел пока нет', all: 'За вами пока нет закреплённых дел'
+}
 
-// saq-sva-test at 0f610e75, initializeSvaEvents(initialSvaEvents).
-// start and end come from event.dates; stage comes from object.status.
-const assignedObjects = [{
-  id: 'sva-260006-obj-15', title: 'Аудит соблюдения отраслевого законодательства',
-  number: 'СВА-260006', objectId: 'obj-15', object: 'РГУ «Основная организация Ш»',
-  responsible: 'Государственный аудитор 12', region: 'Жамбылская область',
-  start: '2026-11-02', end: '2026-11-20', stage: 'Предварительный этап', eventStatus: 'Проект'
-}]
+export function getCases(profileId, allowedModules) {
+  return auditCases.filter(record => allowedModules.has(record.module) && record.assigneeIds.includes(profileId))
+}
 
-export function getCases(profileId) {
-  const person = caseProfiles.find(profile => profile.id === profileId)
-  if (!person) return []
-  return assignedObjects.filter(item => item.responsible === person.name).map(item => ({
-    ...item,
-    href: 'https://saq-sva-test.vercel.app/objects/' + encodeURIComponent(item.number) + '/' + encodeURIComponent(item.objectId)
-  }))
+function currentStage(record) {
+  if (record.lifecycle === 'closed') return 'Завершено'
+  if (record.lifecycle === 'planned') return record.eventStatus === 'Проект' ? 'Проект' : 'Ещё не начато'
+  return record.stage
+}
+
+function stageBadge(record) {
+  const stage = currentStage(record)
+  let tone = 'blue'
+  if (record.lifecycle === 'planned') tone = 'slate'
+  else if (record.lifecycle === 'closed') tone = 'green'
+  else if (/заключит/i.test(stage)) tone = 'violet'
+  else if (/основн/i.test(stage)) tone = 'teal'
+  return '<span class="case-stage tone-' + tone + '"><i></i>' + esc(stage) + '</span>'
 }
 
 const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
-function periodLabel(item, today) {
-  const start = new Date(item.start + 'T00:00:00Z')
-  const end = new Date(item.end + 'T00:00:00Z')
-  const range = dayFormat.formatRange(start, end)
-  if (today === item.start) return range + ' · начало сегодня'
-  if (today === item.end) return range + ' · окончание сегодня'
-  return range
+function periodLabel({ start, end }) {
+  const a = start && new Date(start + 'T00:00:00Z')
+  const b = end && new Date(end + 'T00:00:00Z')
+  if (a && b) return dayFormat.formatRange(a, b)
+  if (a) return 'с ' + dayFormat.format(a)
+  if (b) return 'по ' + dayFormat.format(b)
+  return ''
 }
 
-function caseRow(item, today, full) {
-  const title = esc(item.title)
-  const date = esc(periodLabel(item, today))
-  const context = esc(item.number) + ' · ' + esc(item.object)
-  return `<a class="sva-case-row" href="${esc(item.href)}" target="_blank" rel="noopener noreferrer" aria-label="Открыть объект по мероприятию ${esc(item.number)} в модуле СВА в новой вкладке">
-    ${iconBox('ClipboardCheck', 'violet', 'row-icon')}<span class="sva-case-body">
-      <strong>${title}</strong><span class="sva-case-context">${context}</span>
-      <span class="sva-case-period">${glyph('CalendarRange')} Период проведения · ${date}</span>
-      ${full ? `<span class="sva-case-facts"><span><small>Ответственный аудитор</small>${esc(item.responsible)}</span><span><small>Этап по объекту</small>${esc(item.stage)}</span><span><small>Статус мероприятия</small>${esc(item.eventStatus)}</span><span><small>Регион</small>${esc(item.region)}</span></span>` : ''}
-    </span>${glyph('ArrowUpRight', 'sva-case-open')}</a>`
+function detail(label, value) {
+  return value ? '<span><small>' + esc(label) + '</small>' + esc(value) + '</span>' : ''
 }
 
-export function casesPanel(cases, today, full = false) {
-  const heading = full ? 'Назначенные объекты' : 'Мои мероприятия'
-  const action = full
-    ? `<span class="sva-case-count">${cases.length} ${plural(cases.length, 'объект', 'объекта', 'объектов')}</span>`
-    : `<a class="text-link" href="#/cases">Все мероприятия ${glyph('ArrowRight')}</a>`
-  const visible = full ? cases : cases.slice(0, 3)
-  const rows = visible.length
-    ? visible.map(item => caseRow(item, today, full)).join('')
-    : empty('За вами пока не закреплены объекты аудита', '', 'ClipboardCheck')
-  return `<section class="panel sva-cases" aria-label="${heading}"><div class="panel-head"><h2>${heading}</h2>${action}</div>${rows}</section>`
+function caseRow(record, full) {
+  const object = record.object && record.object !== record.title
+    ? '<span class="case-object">' + esc(record.object) + '</span>' : ''
+  const facts = full ? '<span class="case-facts">' +
+    detail('Моя роль', record.role) + detail('Период мероприятия', periodLabel(record)) +
+    detail('Следующий шаг по делу', record.lifecycle === 'active' && (record.nextAction || record.nextStep)) +
+    '</span>' : ''
+  const stageSource = full && record.lifecycle === 'active' ? '<small>' + esc(record.stageSource) + '</small>' : ''
+  return '<a class="case-row" href="' + esc(record.href) + '" target="_blank" rel="noopener noreferrer" aria-label="' +
+    esc('Открыть дело ' + record.number + ' в модуле ' + record.moduleLabel + '. ' + currentStage(record) + '. Новая вкладка') + '">' +
+    '<span class="case-identity"><span class="case-ref"><span class="case-module tone-' + esc(record.tone) + '">' +
+    esc(record.moduleLabel) + '</span><span>' + esc(record.number) + '</span></span><strong>' + esc(record.title) + '</strong>' + object +
+    '</span><span class="case-progress">' + stageBadge(record) + stageSource + '</span>' + glyph('ArrowUpRight', 'case-open') + facts + '</a>'
+}
+
+// Alternate modules in the short preview. Show each available stage before a second example of the same stage.
+function previewCases(records) {
+  const groups = [...new Set(records.map(r => r.module))].map(id => {
+    const group = records.filter(r => r.module === id)
+    const first = group.filter((r, i) => group.findIndex(x => currentStage(x) === currentStage(r)) === i)
+    return [...first, ...group.filter(r => !first.includes(r))]
+  })
+  const result = []
+  for (let i = 0; result.length < Math.min(records.length, 4); i++) {
+    for (const group of groups) if (group[i] && result.length < 4) result.push(group[i])
+  }
+  return result
+}
+
+function caseTable(records, full, blank) {
+  if (!records.length) return empty(blank, '', 'BriefcaseBusiness')
+  return '<div class="case-table"><div class="case-key" aria-hidden="true"><span>Мероприятие и объект</span><span>Текущий этап</span></div>' +
+    records.map(r => caseRow(r, full)).join('') + '</div>'
+}
+
+export function casesPanel(view) {
+  const active = view.cases.filter(r => r.lifecycle === 'active')
+  const planned = view.cases.filter(r => r.lifecycle === 'planned')
+  const status = active.length ? 'active' : planned.length ? 'planned' : 'active'
+  const rows = previewCases(status === 'active' ? active : planned)
+  return '<section class="panel cases-panel" aria-label="Мои дела"><div class="panel-head"><h2>Мои дела</h2>' +
+    '<a class="text-link" href="#/cases?status=all">Все дела ' + glyph('ArrowRight') + '</a></div>' +
+    caseTable(rows, false, emptyStatus.active) + '</section>'
+}
+
+export function filterCases(records, { status, module, creator }) {
+  return records.filter(record => (status === 'all' || status === record.lifecycle) &&
+    (!module || record.module === module) && (!creator || record.createdById === creator))
+}
+
+export function caseDirectory(view, params) {
+  const status = statuses.some(([id]) => id === params.get('status')) ? params.get('status') : 'active'
+  const permitted = view.modules.filter(m => ['evga', 'sva'].includes(m.id))
+  const module = permitted.find(m => m.id === params.get('module'))?.id || ''
+  const created = params.get('created') === '1'
+  const creator = created ? view.primary.id : ''
+  function href(next) {
+    const query = new URLSearchParams()
+    const current = { status, module, created: created ? '1' : '', ...next }
+    for (const [key, value] of Object.entries(current)) if (value) query.set(key, value)
+    return '#/cases?' + esc(query.toString())
+  }
+  function option(label, selection, selected, count) {
+    return '<a class="home-tab' + (selected ? ' selected' : '') + '" href="' + href(selection) + '"' +
+      (selected ? ' aria-current="true"' : '') + '>' + esc(label) + (count === undefined ? '' : '<span>' + count + '</span>') + '</a>'
+  }
+  const available = filterCases(view.cases, { status: 'all', module, creator })
+  const rows = filterCases(available, { status })
+  const tabs = statuses.map(([id, label]) => option(label, { status: id }, status === id,
+    id === 'all' ? available.length : available.filter(r => r.lifecycle === id).length)).join('')
+  const filters = permitted.length > 1 ? '<div class="case-filter" aria-label="Фильтр по модулю">' +
+    option('Все модули', { module: '' }, !module) + permitted.map(m => option(m.label, { module: m.id }, module === m.id)).join('') + '</div>' : ''
+  const authors = view.cases.some(r => r.createdById === view.primary.id) ? '<div class="case-filter" aria-label="Фильтр по автору">' +
+    option('Все мои дела', { created: '' }, !created) + option('Созданные мной', { created: '1' }, created) + '</div>' : ''
+  const blank = module || created ? 'По выбранным условиям дел нет' : emptyStatus[status]
+  return '<section class="panel case-directory" aria-label="Реестр моих дел"><nav class="case-tabs" aria-label="Состояние дела">' +
+    tabs + '</nav>' + ((filters || authors) ? '<div class="case-tools">' + filters + authors + '</div>' : '') +
+    caseTable(rows, true, blank) + '</section>'
 }

@@ -1,9 +1,9 @@
-import { buildView, profiles } from './model.js'
+import { buildView, defaultProfile, profiles } from './model.js'
 import { esc, glyph, iconBox, empty, brand } from './ui.js'
 import { dashboard, modulesPage, coursesSection } from './dashboard.js'
 import { makeCalendar } from './calendar.js'
 import { teamPage, bindTeam } from './team.js'
-import { casesPanel } from './cases.js'
+import { caseDirectory } from './cases.js'
 import { taskList, noticeList, bindLists } from './lists.js'
 import { getWorkflow, setWorkflowUser, openWorkflowDocument, readNotices, restartDemo, workflowStorageKey } from './workflow.js'
 
@@ -16,7 +16,7 @@ const employee = id => profiles.find(person => person.id === id)
 const readValue = (storage, key) => { try { return storage.getItem(key) } catch { return null } }
 const writeValue = (storage, key, value) => { try { storage.setItem(key, value) } catch { /* Session works in memory. */ } }
 let stored = readValue(sessionStorage, sessionKey)
-let profileId = stored === null ? 'reviewer' : employee(stored)?.id || null
+let profileId = stored === null ? defaultProfile : employee(stored)?.id || null
 let collapsed = readValue(localStorage, navKey) === 'compact'
 let mobileMenu = false
 let homeBox = 'in'
@@ -27,8 +27,8 @@ let calendarKey = ''
 let popup = ''
 let bellTab = 'unread'
 let toastTimer
-const pageTitles = { cases:'Мои мероприятия', home:'Рабочий стол', tasks:'Мои поручения', calendar:'Календарь', modules:'Мои модули', team:'Коллектив', learning:'Моё обучение', notifications:'Уведомления' }
-const pageNotes = { cases:'Мероприятия и объекты, по которым вы назначены ответственным аудитором.', tasks:'Документы, которые поступили вам или были направлены вами другим участникам.', calendar:'Сроки ваших поручений и назначенные события. Время Астаны.', modules:'Разделы SAQ, доступные вашему профилю.', team:'Рабочий календарь подразделения', learning:'Назначенные курсы и результаты обучения.', notifications:'События по вашим документам и поручениям.' }
+const pageTitles = { cases:'Мои дела', home:'Рабочий стол', tasks:'Мои поручения', calendar:'Календарь', modules:'Мои модули', team:'Коллектив', learning:'Моё обучение', notifications:'Уведомления' }
+const pageNotes = { cases:'Аудиты, которые вы ведёте. Откройте дело, чтобы продолжить работу в его модуле.', tasks:'Во входящих видны действия, назначенные вам. В отправленных можно проверить, у кого сейчас документ.', calendar:'Даты ваших мероприятий, встреч и поручений. Время Астаны.', modules:'Разделы SAQ, доступные вашему профилю.', team:'Рабочий календарь подразделения', learning:'Назначенные курсы и результаты обучения.', notifications:'События по вашим документам и поручениям.' }
 function locationState() {
   const hash = location.hash.slice(1).replace(/^\//, '')
   const [path, query = ''] = hash.split('?')
@@ -62,7 +62,8 @@ function navItem(route, label, icon, count) {
 function sideBar() {
   return '<aside class="sidebar" id="workspace-navigation"><a class="brand" href="#/" aria-label="SAQ, на рабочий стол">' + brand() + '</a>' +
     '<nav aria-label="Основная навигация"><div class="nav-group"><p class="nav-caption">Рабочее место</p>' +
-    navItem('home','Рабочий стол','LayoutDashboard') + (view.caseProfile ? navItem('cases','Мои мероприятия','BriefcaseBusiness',view.cases.length) : !view.learning ? navItem('tasks','Мои поручения','ClipboardList',view.active.length) : navItem('learning','Моё обучение','GraduationCap')) +
+    navItem('home','Рабочий стол','LayoutDashboard') + (view.canViewCases ? navItem('cases','Мои дела','BriefcaseBusiness',view.cases.filter(r => r.lifecycle === 'active').length) : '') +
+    (view.learning ? navItem('learning','Моё обучение','GraduationCap') : navItem('tasks','Мои поручения','ClipboardList',view.active.length)) +
     navItem('calendar','Календарь','CalendarDays') + '</div><div class="nav-group"><p class="nav-caption">Пространство SAQ</p>' +
     navItem('modules','Мои модули','Blocks') + navItem('team','Коллектив','Users') + '</div></nav>' +
     '<div class="side-bottom"><button class="nav-item demo-info" data-open="about" title="О демонстрационном стенде"><span class="demo-led"></span><span class="nav-label">Демонстрационный стенд</span></button>' +
@@ -78,13 +79,14 @@ function topBar() {
     '<button class="profile-button" data-open="profile" title="Сменить демопрофиль" aria-label="Профиль, ' + esc(p.name) + '. Сменить профиль"><span class="avatar">' + esc(p.initials) +
     '</span><span class="profile-caption"><b>' + esc(p.name) + '</b><small>' + esc(p.role) + '</small></span>' + glyph('ChevronDown') + '</button></div></header>'
 }
-function loginView() {
-  const options = profiles.map(p => '<option value="' + esc(p.id) + '">' + esc(p.name + ' · ' + p.role) + '</option>').join('')
+function loginView(selection) {
+  const selected = employee(selection)?.id || defaultProfile
+  const options = profiles.map(p => '<option value="' + esc(p.id) + '"' + (p.id === selected ? ' selected' : '') + '>' + esc(p.name + ' · ' + p.role) + '</option>').join('')
   return '<main id="main-content" class="login-page"><div class="login-wrap"><div class="login-aside"><div class="login-brand">' + brand() +
-    '</div><div class="login-message"><h1>Единый кабинет<br>аудитора</h1><p>Поручения, рабочий календарь и модули Smart Audit Qazaqstan.</p></div><span class="login-tag"><i></i>Демонстрационный стенд SAQ</span></div>' +
+    '</div><div class="login-message"><h1>Единый кабинет<br>аудитора</h1><p>Мои дела, поручения и рабочий календарь Smart Audit Qazaqstan.</p></div><span class="login-tag"><i></i>Демонстрационный стенд SAQ</span></div>' +
     '<form id="login-form" class="login-form">' + iconBox('LockKeyhole', 'teal') + '<h2>Вход в кабинет</h2><p>Выберите тестовый профиль. Реквизиты для входа будут заполнены автоматически.</p>' +
     '<label for="role-select">Демонстрационный профиль</label><select id="role-select" name="profile">' + options + '</select>' +
-    '<label for="login-name">Логин</label><input id="login-name" name="login" value="reviewer" autocomplete="off" required>' +
+    '<label for="login-name">Логин</label><input id="login-name" name="login" value="' + esc(selected) + '" autocomplete="off" required>' +
     '<label for="demo-password">Пароль</label><div class="password-field"><input id="demo-password" name="password" type="password" value="demo" autocomplete="off" required><button type="button" data-show-pass aria-label="Показать пароль">' + glyph('Eye') + '</button></div>' +
     '<small class="login-hint">Пароль для демопрофилей — <b>demo</b></small><div class="form-error" id="login-error" role="alert"></div>' +
     '<button type="submit" class="button primary">Войти в кабинет' + glyph('ArrowRight') + '</button></form></div></main>'
@@ -113,7 +115,7 @@ function render() {
     if (profileId || stored === null) activate(null)
     view = null
     document.title = 'Вход · ЕКА SAQ'
-    app.innerHTML = loginView()
+    app.innerHTML = loginView(route.params.get('profile'))
     return
   }
   setWorkflowUser(profileId)
@@ -126,7 +128,7 @@ function render() {
   const pages = {
     home: () => dashboard(view, calendar, homeBox), calendar: () => calendar.full(),
     tasks: () => taskList(view, route.params), notifications: () => noticeList(view, route.params),
-    cases: () => view.caseProfile ? casesPanel(view.cases, view.today, true) : empty('За этим профилем нет закреплённых объектов', '', 'BriefcaseBusiness'),
+    cases: () => view.canViewCases ? caseDirectory(view, route.params) : empty('В этом профиле нет доступа к делам аудита', '', 'BriefcaseBusiness'),
     modules: () => modulesPage(view), team: () => teamPage(view.today, !!view.primary.canImport),
     learning: () => view.learning ? coursesSection(view, false, route.params) : empty('Обучение этому профилю не назначено', '', 'BookOpen')
   }
@@ -152,7 +154,7 @@ function modalHeader(title, icon) {
   return '<div class="modal-heading"><h2 id="overlay-title">' + (icon ? glyph(icon) : '') + title + '</h2><button class="square-btn close-dialog" data-close aria-label="Закрыть">' + glyph('X') + '</button></div>'
 }
 function profilePanel() {
-  return modalHeader('Профиль для просмотра', 'Users') + '<p class="modal-note">От выбора сотрудника зависят его документы, сроки и доступные модули.</p><div class="profile-list">' +
+  return modalHeader('Профиль для просмотра', 'Users') + '<p class="modal-note">Выберите сотрудника, чтобы увидеть его аудиты, поручения и доступные модули.</p><div class="profile-list">' +
     profiles.map(p => '<button class="persona' + (p.id === profileId ? ' chosen' : '') + '" data-profile="' + esc(p.id) + '" aria-pressed="' + (p.id === profileId) + '">' +
       '<span class="avatar">' + esc(p.initials) + '</span><span class="persona-text"><b>' + esc(p.name) + '</b><small>' + esc(p.role) + '</small></span>' +
       (p.id === profileId ? glyph('Check') : '') + '</button>').join('') + '</div><div class="modal-foot"><button class="button quiet" data-logout>' + glyph('LogOut') + 'Выйти из кабинета</button></div>'
@@ -175,9 +177,9 @@ function searchResults(term) {
   const records = [...docs.values()].filter(Boolean).filter(d => matches(d.title + ' ' + d.number + ' ' + d.organization)).slice(0, query ? 10 : 3)
   const modules = view.modules.filter(m => matches(m.label + ' ' + m.title + ' ' + m.description)).slice(0, query ? 8 : 3)
   const courses = view.courses.filter(c => matches(c.title))
-  const cases = view.cases.filter(c => matches(c.title + ' ' + c.number + ' ' + c.object))
+  const cases = view.cases.filter(c => matches([c.title, c.number, c.object, c.moduleLabel, c.stage, c.eventStatus].filter(Boolean).join(' '))).slice(0, query ? 12 : 3)
   const items = [
-    cases.length ? '<h3>Мероприятия</h3>' + cases.map(c => '<a class="search-hit" href="' + esc(c.href) + '" target="_blank" rel="noopener noreferrer">' + glyph('BriefcaseBusiness') + '<span><b>' + esc(c.title) + '</b><small>' + esc(c.number + ' · ' + c.object) + '</small></span>' + glyph('ArrowUpRight') + '</a>').join('') : '',
+    cases.length ? '<h3>Мои дела</h3>' + cases.map(c => '<a class="search-hit" href="' + esc(c.href) + '" target="_blank" rel="noopener noreferrer">' + glyph('BriefcaseBusiness') + '<span><b>' + esc(c.title) + '</b><small>' + esc(c.moduleLabel + ' · ' + c.number + ' · ' + c.object) + '</small></span>' + glyph('ArrowUpRight') + '</a>').join('') : '',
     records.length ? '<h3>Документы</h3>' + records.map(d => '<button class="search-hit" data-document="' + esc(d.id) + '">' + glyph('FileText') + '<span><b>' + esc(d.title) + '</b><small>' + esc(d.number + ' · ' + d.organization) + '</small></span>' + glyph('ChevronRight') + '</button>').join('') : '',
     modules.length ? '<h3>Модули</h3>' + modules.map(m => '<a class="search-hit" href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">' + glyph(m.icon) + '<span><b>' + esc(m.title) + '</b></span>' + glyph('ArrowUpRight') + '</a>').join('') : '',
     courses.length ? '<h3>Обучение</h3>' + courses.map(c => '<a class="search-hit" data-dialog-nav href="#/learning?course=' + esc(c.id) + '">' + glyph('BookOpen') + '<span><b>' + esc(c.title) + '</b></span>' + glyph('ChevronRight') + '</a>').join('') : ''
@@ -185,7 +187,7 @@ function searchResults(term) {
   return items || empty('По вашему запросу ничего не найдено', 'Попробуйте номер документа, название или модуль.', 'Search')
 }
 function aboutPanel() {
-  return modalHeader('О демонстрационном стенде','CircleHelp') + '<div class="about-body"><p>Кабинет объединяет тестовые поручения ВГА, СВА, профконтроля, СУР и возражений. Документы, адресаты и сроки взяты из общего макета SAQ. Для учебных профилей использованы назначения из модуля «Кадры».</p><p>Демонстрационные сроки отсчитываются от первого открытия в этом браузере. Прочтение и решения сохраняются здесь же. Внешние модули открываются на отдельных тестовых стендах.</p><p>Производственный вход через SAQ ID и обмен с рабочими системами относятся к следующему этапу.</p></div><div class="modal-foot"><button class="button quiet" data-prepare-demo>' + glyph('RotateCcw') + 'Начать демонстрацию заново</button></div>'
+  return modalHeader('О демонстрационном стенде','CircleHelp') + '<div class="about-body"><p>Дела, назначения и этапы воспроизводят тестовые данные ВГА и СВА. Карточка открывает дело в исходном модуле. Учебные назначения взяты из модуля «Кадры».</p><p>Поручения и решения работают на примерах общего маршрута SAQ. При наличии срока у самого поручения его дата попадает в календарь. Решения и прочтения сохраняются в этом браузере.</p><p>Производственный вход через SAQ ID и обновление из рабочих модулей относятся к следующему этапу.</p></div><div class="modal-foot"><button class="button quiet" data-prepare-demo>' + glyph('RotateCcw') + 'Начать демонстрацию заново</button></div>'
 }
 function openOverlay(kind) {
   if (!view) return
@@ -213,7 +215,7 @@ document.addEventListener('click', async event => {
   }
   if (!view) return
   if (target.hasAttribute('data-prepare-demo')) {
-    dialog.innerHTML = modalHeader('Начать демонстрацию заново', 'RotateCcw') + '<div class="about-body"><p>В этом браузере будут восстановлены исходные поручения и уведомления для всех демопрофилей. Тестовые решения и отметки о прочтении будут сброшены, а сроки поручений начнут отсчитываться от текущего времени.</p></div><div class="modal-foot"><button class="button quiet" data-close>Отмена</button><button class="button primary" data-restart-demo>Восстановить примеры</button></div>'
+    dialog.innerHTML = modalHeader('Начать демонстрацию заново', 'RotateCcw') + '<div class="about-body"><p>В этом браузере будут восстановлены исходные поручения и уведомления для всех демопрофилей. Тестовые решения и отметки о прочтении будут сброшены.</p></div><div class="modal-foot"><button class="button quiet" data-close>Отмена</button><button class="button primary" data-restart-demo>Восстановить примеры</button></div>'
     return
   }
   if (target.hasAttribute('data-restart-demo')) {
