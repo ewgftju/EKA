@@ -1,0 +1,26 @@
+.sva-cases .panel-head { padding-bottom: 15px; }
+.sva-case-count, .sva-case-context, .sva-case-period, .sva-case-facts small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.sva-case-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 16px 19px;
+  border-top: 1px solid var(--line-soft);
+}
+.sva-case-row:hover { background: #f6faf9; }
+.sva-case-row:focus-visible { outline-offset: -3px; }
+.sva-case-body { flex: 1; display: grid; min-width: 0; gap: 5px; }
+.sva-case-body > strong { font-size: 14px; line-height: 1.45; font-weight: 650; }
+.sva-case-context { line-height: 1.4; }
+.sva-case-period { display: flex; align-items: center; gap: 5px; }
+.sva-case-period .ico { width: 14px; height: 14px; flex-shrink: 0; }
+.sva-case-open { width: 16px; height: 16px; color: #447169; flex-shrink: 0; margin-top: 4px; }
+.sva-case-facts { display: flex; flex-wrap: wrap; gap: 12px 25px; margin: 6px 0 0; }
+.sva-case-facts > span { display: grid; gap: 3px; font-size: 13px; }
+.sva-case-facts small { font-size: 11px; }
+@media (max-width: 680px) {
+  .sva-case-row { padding: 14px 12px; gap: 9px; }
+}

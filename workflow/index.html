@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#003b5c">
+  <title>Документ · ЕКА · SAQ</title>
+  <script>
+    // Some static hosts canonicalize /workflow/ to /workflow.
+    if (location.pathname.endsWith('/workflow')) {
+      const base = document.createElement('base');
+      base.href = location.pathname + '/';
+      document.head.append(base);
+    }
+  </script>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip" href="#content">К документу</a>
+  <header class="document-header">
+    <div class="header-inner">
+      <a class="workspace-brand" href="../" aria-label="Единый кабинет аудитора">
+        <img src="./saq-logo.png" width="40" height="40" alt="">
+        <span><strong>SAQ</strong><small>Единый кабинет аудитора</small></span>
+      </a>
+      <div id="employee" class="employee"></div>
+    </div>
+  </header>
+  <main id="content" tabindex="-1"></main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="decision-dialog" aria-labelledby="dialog-title"></dialog>
+  <noscript>Для открытия документа включите JavaScript.</noscript>
+  <script type="module" src="./document.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#103953">
+  <meta name="description" content="Единый кабинет аудитора SAQ. Персональные поручения, документы и рабочий календарь.">
+  <title>Рабочий стол · ЕКА SAQ</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/saq-mark.svg">
+  <link rel="preload" href="./assets/inter-ui.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="./app.css">
+  <link rel="stylesheet" href="./src/calendar.css">
+  <link rel="stylesheet" href="./src/team.css">
+  <link rel="stylesheet" href="./src/cases.css">
+  <link rel="stylesheet" href="./src/lists.css">
+</head>
+<body>
+  <a class="skip" href="#main-content">Перейти к содержимому</a>
+  <div id="app"></div>
+  <dialog id="overlay" aria-labelledby="overlay-title"></dialog>
+  <div id="feedback" role="status" aria-live="polite"></div>
+  <noscript>Включите JavaScript, чтобы открыть Единый кабинет аудитора.</noscript>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
